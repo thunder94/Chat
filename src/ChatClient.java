@@ -1,5 +1,7 @@
 import java.io.*;
+import java.net.DatagramPacket;
 import java.net.DatagramSocket;
+import java.net.InetAddress;
 import java.net.Socket;
 import java.util.Scanner;
 
@@ -9,20 +11,26 @@ public class ChatClient implements Runnable {
     private DatagramSocket UDPSocket = null;
     private DataOutputStream out;
     private DataInputStream in;
-    private Thread listener;
+    private String hostName;
+    private int portNumber;
+    private Thread TCPListener;
+    private Thread UDPListener;
 
     public static void main(String args[]) {
         if(args.length == 2) {
             String hostName = args[0];
             int portNumber = Integer.parseInt(args[1]);
             new ChatClient(hostName, portNumber);
-        } else if(args.length == 3) {
-
-        } else throw new IllegalArgumentException("Invalid number of parameters!");
+        } else {
+            throw new IllegalArgumentException("Invalid number of parameters!");
+        }
 
     }
 
     public ChatClient(String hostName, int portNumber) {
+
+        this.hostName = hostName;
+        this.portNumber = portNumber;
 
         try {
             // create socket
@@ -33,8 +41,11 @@ public class ChatClient implements Runnable {
             out = new DataOutputStream(new BufferedOutputStream(TCPSocket.getOutputStream()));
             in = new DataInputStream(new BufferedInputStream(TCPSocket.getInputStream()));
 
-            listener = new Thread(this);
-            listener.start();
+            TCPListener = new Thread(this);
+            TCPListener.start();
+
+            UDPListener = new Thread(new ClientUDPListener(TCPSocket.getLocalPort()));
+            UDPListener.start();
 
             // send msg
             startChat();
@@ -54,13 +65,21 @@ public class ChatClient implements Runnable {
 
     private void startChat() {
         Scanner scanner = new Scanner(System.in);
+        System.out.println("Enter your nickname:");
+        String nickname = scanner.next();
+        System.out.println("You can chat now!");
+
         while(true) {
             String msg = scanner.next();
             try {
                 if(msg.equals("U")) {
-
+                    InetAddress address = InetAddress.getByName(hostName);
+                    msg = nickname+": "+scanner.next();
+                    byte[] sendBuffer = msg.getBytes();
+                    DatagramPacket sendPacket = new DatagramPacket(sendBuffer, sendBuffer.length, address, portNumber);
+                    UDPSocket.send(sendPacket);
                 } else {
-                    out.writeUTF(msg);
+                    out.writeUTF(nickname +": "+msg);
                     out.flush();
                 }
             } catch (IOException e) {
@@ -74,12 +93,12 @@ public class ChatClient implements Runnable {
         try {
             while(true) {
                 String line = in.readUTF();
-                System.out.println("received response: " + line);
+                System.out.println(line);
             }
         } catch (IOException ex) {
             ex.printStackTrace();
         } finally {
-            listener = null;
+            TCPListener = null;
             try {
                 out.close();
             } catch (IOException e) {
